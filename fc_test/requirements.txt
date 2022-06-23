@@ -1,2 +1,6 @@
 featurecloud
+wheel
 scikit-learn
+Pillow
+torch
+torchvision

@@ -1,12 +1,14 @@
+import os
+import torch
 from FeatureCloud.app.engine.app import AppState, app_state
 from FeatureCloud.app.engine.app import Role
 import numpy as np
-import pandas as pd
-from sklearn.linear_model import LinearRegression
 from enum import Enum
-
-df_train = pd.DataFrame()
-df_test = pd.DataFrame()
+from torchvision.transforms import transforms
+import torch.optim as optim
+from model import VGG16
+from utils import ChestMNIST, train, val, test
+import torch.nn as nn
 
 
 class States(Enum):
@@ -42,8 +44,7 @@ class DistributeDataState(AppState):
         self.log(f'{self.id} Split data for {len(self.clients)} clients ...')
 
         self.log('Distribute initial model parameters ...')
-        # self.send_data_to_participant(np.random.random(10), self.clients)
-        self.broadcast_data((0, np.random.random(1), np.random.random(10)))
+        self.broadcast_data((0, np.random.random(10)))
 
         return States.receive_data.value
 
@@ -58,14 +59,19 @@ class ReceiveDataState(AppState):
         # Load the client data and split it into training and test set
         sorted_array = sorted(self.clients)
         client_number = sorted_array.index(self.id)
-        df = pd.read_csv(f'app/data/client_{client_number}/data.csv')
-        df_train = df.sample(frac=0.8)
-        df_test = df.drop(df_train.index)
 
-        self.store('train', df_train)
-        self.store('test', df_test)
+        input_root = f'app/data/client_{client_number}/data.npz'
 
-        self.log(f'{self.id} loaded data {df.shape} ...')
+        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+        train_dataset = ChestMNIST(root=input_root, split='train', transform=transform)
+        val_dataset = ChestMNIST(root=input_root, split='val', transform=transform)
+        test_dataset = ChestMNIST(root=input_root, split='test', transform=transform)
+
+        self.store('train', train_dataset)
+        self.store('val', val_dataset)
+        self.store('test', test_dataset)
+
+        self.log(f'{self.id} loaded data ...')
 
         return States.compute.value
 
@@ -79,30 +85,78 @@ class ComputeState(AppState):
 
     def run(self):
         self.log(f'{self.id} performing compute ...')
-        df_train = self.load('train')
-        df_test = self.load('test')
-        self.log(f'Received as {self.id} the data {df_train.shape}')
 
-        iter, intercept, coef = self.await_data()
-        self.log(f'Iter[{iter}] Received newest coefficients ... {intercept} {coef}')
+        output_root = '/mnt/output'
+        if not os.path.exists(output_root):
+            os.mkdir(output_root)
+
+        train_dataset = self.load('train')
+        val_dataset = self.load('val')
+        test_dataset = self.load('test')
+
+        self.log(f'Received as {self.id} the data...')
+
+        start_epoch = 0
+        end_epoch = 2
+        batch_size = 128
+        val_auc_list = []
+
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = torch.utils.data.DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=True)
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+
+        self.log('Train model...')
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.log(f'Device "{device.type}" will be used for {self.id}...')
+
+        iteration_number, states = self.await_data()
+        self.log(f'Iter[{iteration_number}] Received newest coefficients...')
         self.log(f'{self.id}[{"Coordinator" if self.is_coordinator else "Participants"}]: training model ...')
-        # Create a model with the latest model parameters
-        reg = LinearRegression()
-        reg.coef_ = coef
-        reg.intercept_ = intercept
 
-        if iter == -1:
-            test_score = reg.score(df_test.drop(columns='target'), df_test['target'])
-            self.log(f'{self.id} Final model score {test_score} ...')
+        # Create a model with the latest model parameters
+        model = VGG16(in_channels=1, num_classes=14).to(device)
+        if iteration_number:
+            model.load_state_dict(states)
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        criterion = nn.BCEWithLogitsLoss()
+
+        if iteration_number == -1:
+            self.log('Final Test model...')
+
+            auc, acc = test(model, train_loader, device)
+            self.log(f'Train data. AUC: {auc:.5f} ACC: {acc:.5f}')
+            auc, acc = test(model, val_loader, device)
+            self.log(f'Val data.   AUC: {auc:.5f} ACC: {acc:.5f}')
+            auc, acc = test(model, test_loader, device)
+            self.log(f'Test data.  AUC: {auc:.5f} ACC: {acc:.5f}')
+
             return States.terminal.value
         else:
             self.log(f'Training local model one more time ...')
-            reg = LinearRegression().fit(df_train.drop(columns='target'), df_train['target'])
-            test_score = reg.score(df_test.drop(columns='target'), df_test['target'])
-            self.log(f'test score: {test_score}')
 
-            self.log(f'Send to coordinator updated coefficients')
-            self.send_data_to_coordinator((reg.intercept_, reg.coef_))
+            for epoch in range(start_epoch, end_epoch):
+                train(model, optimizer, criterion, train_loader, device)
+                auc = val(model, val_loader, device, val_auc_list, output_root, epoch)
+                self.log(f'epoch {epoch + 1}. AUC: {auc:.5f}')
+
+            auc_list = np.array(val_auc_list)
+            index = auc_list.argmax()
+            self.log(f'epoch {index} is the best model')
+
+            restore_model_path = os.path.join(output_root, f'ckpt_{index}_auc_{auc_list[index]:.5f}.pth')
+            model.load_state_dict(torch.load(restore_model_path)['net'])
+
+            self.log('Test model...')
+
+            auc, acc = test(model, train_loader, device)
+            self.log(f'AUC: {auc:.5f} ACC: {acc:.5f}')
+            auc, acc = test(model, val_loader, device)
+            self.log(f'AUC: {auc:.5f} ACC: {acc:.5f}')
+            auc, acc = test(model, test_loader, device)
+            self.log(f'AUC: {auc:.5f} ACC: {acc:.5f}')
+
+            self.log(f'Send to coordinator updated coefficients...')
+            self.send_data_to_coordinator((torch.load(restore_model_path)['net'],))
 
         if self.is_coordinator:
             return States.agg_results.value
@@ -119,30 +173,30 @@ class AggregationState(AppState):
 
     def run(self):
         self.iteration = self.load('iteration')
-        # data = self.gather_data(2, is_json=False)
         self.log(f'{self.id}[{"Coordinator" if self.is_coordinator else "Participants"}, Iteration {self.iteration}')
+
         data = self.await_data(len(self.clients), is_json=False)
+        self.log(f'Aggregation data received...')
+
         agg_data = np.mean(data, axis=0)
-        self.log(f'Aggregation data received {data}')
-        self.log(f'Result {agg_data}')
+        self.log(f'Data aggregated successfully...')
 
         self.iteration += 1
         self.store('iteration', self.iteration)
 
-        # Stop the process after 3 iterations
-        if self.iteration >= 3:
+        # Stop the process after 1 iteration, but we can fit the models more than once
+        if self.iteration >= 1:
             self.iteration = -1
 
         self.log(f'{self.id} send results back ...')
-        self.broadcast_data((self.iteration, agg_data[0], agg_data[1]))
+        self.broadcast_data((self.iteration, agg_data[0]))
         return States.compute.value
 
 
 @app_state(States.receive_aggregation.value, Role.BOTH)
 class RecvAggregationState(AppState):
     def register(self):
-        self.register_transition(States.terminal.value,
-                                 role=Role.BOTH)
+        self.register_transition(States.terminal.value, role=Role.BOTH)
 
     def run(self):
         data = self.await_data(1)

@@ -1,0 +1,6 @@
+id: 1
+image: fc_test
+createdat: 2022-06-23T19:24:04.532620419Z
+relayaddress: localhost
+queryinterval: 3
+resultdir: /data/tests
