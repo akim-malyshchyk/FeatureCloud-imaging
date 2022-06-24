@@ -28,4 +28,11 @@ ResNet50|test|0.77013|0.94748|
 VGG16|test|0.75493|0.94797|
 
 Some of them are better than official medMNIST benchmarks. 
-Multi-client mode results are coming soon.
+
+We also tried to fit our modified VGG model in multi-clients mode and get average weights from them.
+
+model|dataset|AUC|ACC|
+--------|-----|-------|-------|
+VGG16|train|0.44267|0.94887|
+VGG16|val|0.43676|0.94917|
+VGG16|test|0.44639|0.94726|
