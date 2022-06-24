@@ -29,10 +29,29 @@ VGG16|test|0.75493|0.94797|
 
 Some of them are better than official medMNIST benchmarks. 
 
-We also tried to fit our modified VGG model in multi-clients mode and get average weights from them.
+We also tried to fit our modified VGG model in 2 clients mode and get average weights from them.
 
 model|dataset|AUC|ACC|
 --------|-----|-------|-------|
 VGG16|train|0.44267|0.94887|
 VGG16|val|0.43676|0.94917|
 VGG16|test|0.44639|0.94726|
+
+Here is are very strange AUC values, maybe we made some mistakes while computing average weights.
+
+These are metrics for local model from client_2 on 2 parts of data.
+
+model|dataset|AUC|ACC|
+--------|-----|-------|-------|
+VGG_client_2|train_part_1|0.73221|0.94918
+VGG_client_2|val_part_1|0.74091|0.94920
+VGG_client_2|test_part_1|0.73307|0.94756
+
+
+model|dataset|AUC|ACC|
+--------|-----|-------|-------|
+VGG_client_2|train_part_2|0.76809|0.94902
+VGG_client_2|val_part_2|0.73734|0.94910
+VGG_client_2|test_part_2|0.73090|0.94776
+
+As we can see, local model predictions are better than predictions of an aggregated model.
