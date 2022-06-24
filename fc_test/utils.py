@@ -94,7 +94,7 @@ def val(model, val_loader, device, val_auc_list, dir_path, epoch):
         val_auc_list.append(auc)
 
     state = {'net': model.state_dict(), 'auc': auc, 'epoch': epoch}
-    path = os.path.join(dir_path, f'ckpt_{epoch}_auc_{auc:%.5f}.pth')
+    path = os.path.join(dir_path, f'ckpt_{epoch}_auc_{auc:.5f}.pth')
     torch.save(state, path)
     return state['auc']
 
