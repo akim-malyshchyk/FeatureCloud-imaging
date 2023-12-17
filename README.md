@@ -1,7 +1,7 @@
 # FeatureCloud imaging
-### Imaging challenge solution for FeatureCloud.ai hackathon
+[![FeatureCloud logo](https://featurecloud.eu/wp-content/uploads/2019/04/fc_logo.svg)](https://featurecloud.eu)
 
-This repo contains federated learning application for multi-label X-ray images classification. 
+This repo contains federated learning application for multi-label X-ray images classification. This app was the solution to Imaging challenge of 1st FeatureCloud.ai hackathon, held in 2022 in Hamburg. 
 
 ### Data
 The dataset we used was ChestMNIST (part of medMNIST), which consists of 28x28 grayscaled images. 
@@ -37,9 +37,9 @@ VGG16|train|0.44267|0.94887|
 VGG16|val|0.43676|0.94917|
 VGG16|test|0.44639|0.94726|
 
-Here is are very strange AUC values, maybe we made some mistakes while computing average weights.
+Here we can see strange AUC values, maybe we made some mistakes while computing average weights.
 
-These are metrics for local model from client_2 on 2 parts of data.
+These are metrics for local model from `client_2` on 2 parts of data.
 
 model|dataset|AUC|ACC|
 --------|-----|-------|-------|
@@ -55,3 +55,8 @@ VGG_client_2|val_part_2|0.73734|0.94910
 VGG_client_2|test_part_2|0.73090|0.94776
 
 As we can see, local model predictions are better than predictions of an aggregated model.
+
+## Contributors
+
+- [Tim Vaitko](https://github.com/timvoytko)
+- [Akim Malyshchyk](https://github.com/akimich11)
